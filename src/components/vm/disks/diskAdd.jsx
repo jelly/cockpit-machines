@@ -352,7 +352,8 @@ export class AddDiskModalBody extends React.Component {
         super(props);
         this.state = {
             validate: false,
-            dialogLoading: true
+            dialogLoading: true,
+            customDiskVerified: false,
         };
         this.onValueChanged = this.onValueChanged.bind(this);
         this.dialogErrorSet = this.dialogErrorSet.bind(this);
@@ -513,11 +514,39 @@ export class AddDiskModalBody extends React.Component {
             break;
         }
         case 'file': {
+            this.setState({ file: value });
+
             if (value.endsWith(".iso")) {
                 // use onValueChange instead of setState in order to perform subsequent state change logic
+                this.setState({ customDiskVerified: true });
                 this.onValueChanged("device", "cdrom");
             }
-            this.setState({ file: value });
+
+            if (value) {
+                // Limit process time to 2 seconds and ram to 50 MB
+                cockpit.spawn(["/bin/bash", "-ce", "ulimit -t 2 -v 50000; qemu-img info --output json " + value], { err: "message" })
+                        .then(output => {
+                            try {
+                                const data = JSON.parse(output);
+                                if (data['backing-filename']) {
+                                    this.dialogErrorSet(_("Importing an image with a backing file is unsupported"),
+                                                        cockpit.format(_("Backing file: $0"), data['backing-filename']));
+                                    this.setState({ customDiskVerified: false });
+                                } else {
+                                    this.setState({ customDiskVerified: true, format: data.format, dialogError: "" });
+                                }
+                            } catch (err) {
+                                this.setState({ customDiskVerified: false });
+                                console.error("qemu-img: provided invalid JSON");
+                            }
+                        })
+                        .catch(e => {
+                            this.setState({ customDiskVerified: false });
+                            console.warn("could not execute qemu-img:", e.toString());
+                        });
+            } else {
+                this.setState({ customDiskVerified: false });
+            }
             break;
         }
         case 'device': {
@@ -602,7 +631,7 @@ export class AddDiskModalBody extends React.Component {
             device: this.state.device,
             poolName: this.state.storagePoolName,
             volumeName: this.state.existingVolumeName,
-            format: this.state.mode !== CUSTOM_PATH ? this.state.format : "raw", // TODO: let user choose format for disks with custom file path
+            format: this.state.format,
             target: this.state.target,
             permanent: this.state.permanent,
             hotplug: this.state.hotplug,
@@ -729,7 +758,9 @@ export class AddDiskModalBody extends React.Component {
                            <Button id={`${idPrefix}-dialog-add`}
                                    variant='primary'
                                    isLoading={this.state.addDiskInProgress}
-                                   isDisabled={this.state.addDiskInProgress || dialogLoading || (storagePools.length == 0 && this.state.mode != CUSTOM_PATH)}
+                                   isDisabled={this.state.addDiskInProgress || dialogLoading ||
+                                               (storagePools.length == 0 && this.state.mode != CUSTOM_PATH) ||
+                                               (this.state.mode == CUSTOM_PATH && this.state.device === "disk" && !this.state.customDiskVerified)}
                                    onClick={this.onAddClicked}>
                                {_("Add")}
                            </Button>
