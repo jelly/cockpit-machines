@@ -109,7 +109,14 @@ if [ "$ID" = "fedora" ]; then
 fi
 
 # pre-download cirros image for Machines tests
-bots/image-download cirros
+if [ $(uname -m) = aarch64 ]; then
+    sed 's/i386/aarch64/' bots/scripts/cirros.bootstrap > cirros.bootstrap
+    sed -i 's/x86_64/aarch64/' cirros.bootstrap
+    sh -ex cirros.bootstrap $(pwd)/cirros.img
+    rm cirros.bootstrap
+else
+    bots/image-download cirros
+fi
 
 exclude_options=""
 for t in $EXCLUDES; do
