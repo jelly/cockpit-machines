@@ -206,7 +206,7 @@ check: prepare-check
 	test/common/run-tests ${RUN_TESTS_OPTIONS}
 
 bots: test/common
-	test/common/make-bots
+	COCKPIT_BOTS_REF=update-container-ci test/common/make-bots
 
 test/reference: test/common
 	test/common/pixel-tests pull
